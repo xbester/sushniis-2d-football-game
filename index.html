@@ -7,91 +7,224 @@
     <style>
         body {
             margin: 0;
-            background-color: #1a1a1a;
+            background-color: #111;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            color: white;
-            font-family: sans-serif;
             flex-direction: column;
+            min-height: 100vh;
+            color: white;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        #game-info {
+            margin-bottom: 10px;
+            font-size: 18px;
+            text-align: center;
         }
         canvas {
             border: 4px solid white;
-            background-color: #2e8b57; /* Pitch Green */
+            background-color: #2e8b57;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
-    <h1>2D Football Game</h1>
-    <canvas id="gameCanvas" width="800" height="500"></canvas>
-    <p>Use WASD or Arrow Keys to move your player!</p>
+
+    <div id="game-info">
+        <span>Controls: <b>WASD / Arrows</b> to move | <b>Click/Tap Teammate</b> to Pass!</span>
+    </div>
+
+    <canvas id="gameCanvas" width="1200" height="650"></canvas>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        // Game Objects
-        const player = { x: 200, y: 250, radius: 15, color: 'blue', speed: 4 };
-        const ball = { x: 400, y: 250, radius: 10, color: 'white', vx: 0, vy: 0, friction: 0.98 };
+        // Controlled Player
+        const mainPlayer = { x: 250, y: 325, radius: 18, color: '#1e90ff', speed: 5, hasBall: true };
 
-        // Keyboard Controls
+        // Teammates to pass to
+        const teammates = [
+            { x: 450, y: 150, radius: 18, color: '#4169e1', hasBall: false },
+            { x: 450, y: 500, radius: 18, color: '#4169e1', hasBall: false },
+            { x: 650, y: 325, radius: 18, color: '#4169e1', hasBall: false }
+        ];
+
+        // Football Object
+        const ball = {
+            x: mainPlayer.x,
+            y: mainPlayer.y,
+            targetX: null,
+            targetY: null,
+            isPassing: false,
+            speed: 12,
+            carrier: mainPlayer
+        };
+
         const keys = {};
         window.addEventListener('keydown', e => keys[e.key] = true);
         window.addEventListener('keyup', e => keys[e.key] = false);
 
+        // Click or Tap to Pass
+        canvas.addEventListener('click', (e) => {
+            if (!ball.carrier) return; // Can only pass if someone holds the ball
+
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            // Check if user clicked/tapped near a teammate
+            const allPlayers = [mainPlayer, ...teammates];
+            allPlayers.forEach(player => {
+                if (player !== ball.carrier) {
+                    const dist = Math.hypot(clickX - player.x, clickY - player.y);
+                    if (dist < player.radius + 20) {
+                        // Throw pass to this player
+                        ball.isPassing = true;
+                        ball.targetX = player.x;
+                        ball.targetY = player.y;
+                        ball.targetPlayer = player;
+                        ball.carrier = null;
+                    }
+                }
+            });
+        });
+
         function update() {
             // Player Movement
-            if (keys['ArrowUp'] || keys['w']) player.y -= player.speed;
-            if (keys['ArrowDown'] || keys['s']) player.y += player.speed;
-            if (keys['ArrowLeft'] || keys['a']) player.x -= player.speed;
-            if (keys['ArrowRight'] || keys['d']) player.x += player.speed;
+            if (keys['ArrowUp'] || keys['w']) mainPlayer.y -= mainPlayer.speed;
+            if (keys['ArrowDown'] || keys['s']) mainPlayer.y += mainPlayer.speed;
+            if (keys['ArrowLeft'] || keys['a']) mainPlayer.x -= mainPlayer.speed;
+            if (keys['ArrowRight'] || keys['d']) mainPlayer.x += mainPlayer.speed;
 
-            // Simple Kick Mechanics
-            const dx = ball.x - player.x;
-            const dy = ball.y - player.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+            // Restrict Main Player inside boundaries
+            mainPlayer.x = Math.max(mainPlayer.radius, Math.min(canvas.width - mainPlayer.radius, mainPlayer.x));
+            mainPlayer.y = Math.max(mainPlayer.radius, Math.min(canvas.height - mainPlayer.radius, mainPlayer.y));
 
-            if (distance < player.radius + ball.radius) {
-                const angle = Math.atan2(dy, dx);
-                const force = 5;
-                ball.vx = Math.cos(angle) * force;
-                ball.vy = Math.sin(angle) * force;
+            // Ball Logic
+            if (ball.carrier) {
+                // Ball snaps directly to player carrying it
+                ball.x = ball.carrier.x + 10;
+                ball.y = ball.carrier.y;
+            } else if (ball.isPassing) {
+                // Ball flies toward target teammate
+                const dx = ball.targetX - ball.x;
+                const dy = ball.targetY - ball.y;
+                const dist = Math.hypot(dx, dy);
+
+                if (dist < ball.speed) {
+                    // Arrived at target player
+                    ball.x = ball.targetX;
+                    ball.y = ball.targetY;
+                    ball.carrier = ball.targetPlayer;
+                    ball.isPassing = false;
+                } else {
+                    ball.x += (dx / dist) * ball.speed;
+                    ball.y += (dy / dist) * ball.speed;
+                }
+            }
+        }
+
+        function drawField() {
+            // Grass
+            ctx.fillStyle = '#2e8b57';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Left Touchdown Zone (HOME)
+            ctx.fillStyle = '#8b0000';
+            ctx.fillRect(0, 0, 100, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 24px Arial';
+            ctx.save();
+            ctx.translate(50, canvas.height / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText("END ZONE", -60, 10);
+            ctx.restore();
+
+            // Right Touchdown Zone (AWAY)
+            ctx.fillStyle = '#00008b';
+            ctx.fillRect(canvas.width - 100, 0, 100, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.save();
+            ctx.translate(canvas.width - 50, canvas.height / 2);
+            ctx.rotate(Math.PI / 2);
+            ctx.fillText("END ZONE", -60, 10);
+            ctx.restore();
+
+            // Yard Lines and Numbers
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 3;
+
+            let yard = 10;
+            for (let x = 200; x < canvas.width - 100; x += 100) {
+                // Vertical Yard Line
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+
+                // Yard Numbers
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.font = 'bold 20px Arial';
+                let displayYard = yard <= 50 ? yard : 100 - yard;
+                ctx.fillText(displayYard, x - 12, 40);
+                ctx.fillText(displayYard, x - 12, canvas.height - 30);
+                yard += 10;
             }
 
-            // Ball Physics
-            ball.x += ball.vx;
-            ball.y += ball.vy;
-            ball.vx *= ball.friction;
-            ball.vy *= ball.friction;
+            // Outer Boundary
+            ctx.strokeRect(100, 0, canvas.width - 200, canvas.height);
+        }
 
-            // Bounce off walls
-            if (ball.x - ball.radius < 0 || ball.x + ball.radius > canvas.width) ball.vx *= -1;
-            if (ball.y - ball.radius < 0 || ball.y + ball.radius > canvas.height) ball.vy *= -1;
+        function drawFootball(x, y) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            // Brown Oval Shape
+            ctx.fillStyle = '#8B4513';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 12, 7, Math.PI / 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // White Laces
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-4, -4);
+            ctx.lineTo(4, 4);
+            ctx.stroke();
+
+            ctx.restore();
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Pitch Lines
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 2;
+            drawField();
+
+            // Draw Teammates
+            teammates.forEach(t => {
+                ctx.fillStyle = t.color;
+                ctx.beginPath();
+                ctx.arc(t.x, t.y, t.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+
+            // Draw Controlled Player
+            ctx.fillStyle = mainPlayer.color;
             ctx.beginPath();
-            ctx.moveTo(canvas.width / 2, 0);
-            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.arc(mainPlayer.x, mainPlayer.y, mainPlayer.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'gold';
+            ctx.lineWidth = 3;
             ctx.stroke();
 
-            // Player
-            ctx.fillStyle = player.color;
-            ctx.beginPath();
-            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Ball
-            ctx.fillStyle = ball.color;
-            ctx.beginPath();
-            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-            ctx.fill();
+            // Draw Football
+            drawFootball(ball.x, ball.y);
         }
 
         function gameLoop() {
